@@ -7,13 +7,13 @@ const ATOL = 1e-4
     θ::Float64
 end
 
-@inline δ_grid(δ, ssize, gsize) = floor(Int, δ / ssize * gsize)
-@inline δ_grid(δ, model) = δ_grid(δ, model.ssize, model.gsize)
-@inline pos_grid(pos, model) = δ_grid.(pos, model)
-@inline rect(θ) = (cos(θ), sin(θ))
-@inline left(θ, model) = model.d_pher .* (cos(θ + model.θ), sin(θ + model.θ))
-@inline mid(θ, model) = model.d_pher .* (cos(θ), sin(θ))
-@inline right(θ, model) = model.d_pher .* (cos(θ - model.θ), sin(θ - model.θ))
+δ_grid(δ, ssize, gsize) = floor(Int, δ / ssize * gsize)
+δ_grid(δ, model) = δ_grid(δ, model.ssize, model.gsize)
+pos_grid(pos, model) = δ_grid.(pos, model.ssize, model.gsize)
+rect(θ) = (cos(θ), sin(θ))
+left(θ, model) = model.d_pher .* (cos(θ + model.θ), sin(θ + model.θ))
+mid(θ, model) = model.d_pher .* (cos(θ), sin(θ))
+right(θ, model) = model.d_pher .* (cos(θ - model.θ), sin(θ - model.θ))
 update_vel!(ant, model) = (ant.vel = model.speed .* (cos(ant.θ), sin(ant.θ)))
 
 function initialize_model(
@@ -36,7 +36,7 @@ function initialize_model(
     dims = (size, size)
     grid_dims = (grid_size, grid_size)
 
-    space = ContinuousSpace(dims, min(dims...) / r_vis)
+    space = ContinuousSpace(dims, min(dims...) / r_vis; update_vel!)
     rng = MersenneTwister(seed)
 
     gr_pher = δ_grid(r_pher, size, grid_size)
