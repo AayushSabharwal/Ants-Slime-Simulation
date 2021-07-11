@@ -1,4 +1,5 @@
-includet("periodic_grid.jl")
+using Revise
+
 includet("core.jl")
 includet("stepping.jl")
 includet("visualization.jl")

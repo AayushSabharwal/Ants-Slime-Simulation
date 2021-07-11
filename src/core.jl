@@ -1,71 +1,85 @@
 using Agents
 using Random
+using ImageFiltering
 
-const ATOL = 1e-4
-
-@agent Ant ContinuousAgent{2} begin
-    θ::Float64
+@agent Ant GridAgent{2} begin
+    θ::Float32
 end
 
-δ_grid(δ, ssize, gsize) = floor(Int, δ / ssize * gsize)
-δ_grid(δ, model) = δ_grid(δ, model.ssize, model.gsize)
-pos_grid(pos, model) = δ_grid.(pos, model.ssize, model.gsize)
-rect(θ) = (cos(θ), sin(θ))
-left(θ, model) = model.d_pher .* (cos(θ + model.θ), sin(θ + model.θ))
-mid(θ, model) = model.d_pher .* (cos(θ), sin(θ))
-right(θ, model) = model.d_pher .* (cos(θ - model.θ), sin(θ - model.θ))
-update_vel!(ant, model) = (ant.vel = model.speed .* (cos(ant.θ), sin(ant.θ)))
+@inline inbounds(pos, size) = all(1 .<= pos .<= size)
 
 function initialize_model(
-    size::Float64,
-    grid_size::Int,
-    n_ants::Int,
-    pos_ants::NTuple{2,Float64};
-    r_vis::Float64 = 3.0,    # vision radius
-    θ_pher::Float64 = 60.0,  # angle between pheromone sensors
-    r_pher::Float64 = 1.0,   # radius of pheromone sensors
-    d_pher::Float64 = 2.0,  # distance to pheromone sensors
-    speed::Float64 = 3.0,   # movement speed
-    σ::Float64 = 3.0,     # stdev of random angle variation
-    decay_rate::Float64 = 0.93, # of pheromones
-    dt::Float64 = 0.3,  # time granularity of simulation
+    size::Int;
+    dep_pher::Real = 5,
+    θ_pher::Float32 = 45f0,  # angle between pheromone sensors
+    r_pher::Int = 1,   # radius of pheromone sensors
+    d_pher::Int = 9,  # distance to pheromone sensors
+    speed::Float32 = 1f0,   # movement speed
+    decay_rate::Float32 = 0.99, # of pheromones
     seed::Int = 42,
 )
     @assert d_pher >= 2r_pher
-    
-    dims = (size, size)
-    grid_dims = (grid_size, grid_size)
 
-    space = ContinuousSpace(dims, min(dims...) / r_vis; update_vel!)
+    dims = (size, size)
+
+    space = GridSpace(dims; periodic = false)
     rng = MersenneTwister(seed)
 
-    gr_pher = δ_grid(r_pher, size, grid_size)
-    gd_pher = δ_grid(d_pher, size, grid_size)
-
     circ = [
-        (i, j) for i in -gr_pher:gr_pher, j in -gr_pher:gr_pher if
-        (i * i + j * j) <= gr_pher * gr_pher
+        (i, j) for
+        i in -r_pher:r_pher, j in -r_pher:r_pher if (i * i + j * j) <= r_pher * r_pher
     ]
 
+    kernel = centered(fill(Float32(1 / 9), 3, 3) .* decay_rate)
+
     properties = (
-        ssize = size,
-        gsize = grid_size,
-        pheromones = PeriodicMatrix(fill(0.0, grid_dims...)),
-        speed = speed,
+        size = size,
+        pheromones = fill(0f0, dims...),
+        speed = speed*√2,
         sensor = circ,
+        dep_pher = dep_pher,
         d_pher = d_pher,
-        gd_pher = gd_pher,
         θ = deg2rad(θ_pher),
-        σ = σ,
-        decay_rate = decay_rate * dt,
-        dt = dt,
+        kernel = kernel,
+        border = Fill(0, kernel),
+        rands = Int[],
     )
 
-    model = ABM(Ant, space; rng, properties)
+    ABM(Ant, space; rng, properties, scheduler = Schedulers.randomly)
+end
 
-    for _ = 1:n_ants
-        add_agent!(pos_ants, model, (0., 0.), rand(rng) * 2π)
+function spawn_agents_position!(model, n_ants::Int, pos_ants::NTuple{2,Float32})
+    for _ in 1:n_ants
+        add_agent!(pos_ants, model, (0.0, 0.0), rand(rng) * 2π)
     end
+    resize!(model.rands, nagents(model))
+    nothing
+end
 
-    return model
+function spawn_agents_circle!(model, radius::Int)
+    center = floor.(Int, (model.size, model.size) ./ 2)
+    for i in -radius:radius, j in -radius:radius
+        r = √(i^2 + j^2)
+        if inbounds(center .+ (i, j), model.size) && r > 0
+            θ = acos(abs(i)/r)
+            if i < 0 && j > 0
+                θ = π - θ
+            elseif i < 0 && j < 0
+                θ = π + θ
+            elseif i > 0 && j < 0
+                θ = 2π - θ
+            end
+            add_agent!(center .+ (i, j), model, θ)
+        end
+    end
+    resize!(model.rands, nagents(model))
+    nothing
+end
+
+function spawn_agents_random!(model, chance::Float32)
+    for i in 1:model.size, j in 1:model.size
+        rand(model.rng) < chance && add_agent!((i, j), model, rand(model.rng) * 2π)
+    end
+    resize!(model.rands, nagents(model))
+    nothing
 end

@@ -1,24 +1,26 @@
-using GLMakie
 using HDF5
-function run(model, file; nsteps = 100)
+using GLMakie
+using ProgressMeter
+
+function simulate!(model, file; nsteps = 100)
     f = h5open(file, "w")
     f["log"] = zeros((nsteps, size(model.pheromones)...))
     fdata = HDF5.readmmap(f["log"])
+    p = Progress(nsteps; barglyphs = BarGlyphs("[=> ]"))
     for i in 1:nsteps
+        fdata[i, :, :] = model.pheromones
         Agents.step!(model, ant_step!, model_step!)
-        fdata[i,:,:] = model.pheromones.mat
+        next!(p)
     end
     close(f)
 end
 
-function plot(file)
-    fig = Figure(resolution = (1000, 1000))
+function pheromone_map(file)
     f = h5open(file, "r")
-    maxt = size(f["log"], 1)
-    time = Slider(fig[1,1], range = 1:maxt, startvalue = 1; tellwidth = false)
-    chm = @lift(f["log"][$(time.value), :, :])
-    ax = fig[2,1] = Axis(fig)
-    heatmap!(ax, chm)
-
-    fig, f
+    fig = Figure(; resolution = (600, 600))
+    ax = fig[1, 1] = Axis(fig; aspect = AxisAspect(1))
+    slider = Slider(fig[2, 1], range = 1:size(f["log"], 1), startvalue = 1)
+    current = @lift(f["log"][$(slider.value), :, :])
+    heatmap!(ax, current; colormap = :viridis)
+    return fig, f
 end
